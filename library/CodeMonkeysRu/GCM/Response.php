@@ -1,4 +1,5 @@
 <?php
+
 namespace CodeMonkeysRu\GCM;
 
 /**
@@ -12,28 +13,28 @@ class Response
      *
      * @var integer
      */
-    private $multicastId = null;
+    private $multicastIds = null;
 
     /**
      * Number of messages that were processed without an error.
      *
      * @var integer
      */
-    private $success = null;
+    private $success = 0;
 
     /**
      * Number of messages that could not be processed.
      *
      * @var integer
      */
-    private $failure = null;
+    private $failure = 0;
 
     /**
      * Number of results that contain a canonical registration ID.
      *
      * @var integer
      */
-    private $canonicalIds = null;
+    private $canonicalIds = 0;
 
     /**
      * Array of objects representing the status of the messages processed.
@@ -53,25 +54,32 @@ class Response
      */
     private $results = array();
 
-    public function __construct(Message $message, $responseBody)
+    public function __construct(Message $message, $responses)
     {
-        $data = \json_decode($responseBody, true);
-        if ($data === null) {
-            throw new Exception("Malformed reponse body. ".$responseBody, Exception::MALFORMED_RESPONSE);
-        }
-        $this->multicastId = $data['multicast_id'];
-        $this->failure = $data['failure'];
-        $this->success = $data['success'];
-        $this->canonicalIds = $data['canonical_ids'];
-        $this->results = array();
-        foreach ($message->getRegistrationIds() as $key => $registrationId) {
-            $this->results[$registrationId] = $data['results'][$key];
+        foreach ($responses as $response) {
+            $data = \json_decode($response, true);
+            if ($data === null) {
+                throw new Exception("Malformed reponse body. " . $response, Exception::MALFORMED_RESPONSE);
+            }
+
+            $this->multicastIds = array();
+            array_push($this->multicastIds, $data['multicast_id']);
+
+            $this->failure += $data['failure'];
+            $this->success += $data['success'];
+            $this->canonicalIds += $data['canonical_ids'];
+            $this->results = array();
+            foreach ($message->getRegistrationIds() as $key => $registrationId) {
+                if (!array_key_exists($registrationId, $this->results)) {
+                    $this->results[$registrationId] = $data['results'][$key];
+                }
+            }
         }
     }
 
-    public function getMulticastId()
+    public function getMulticastIds()
     {
-        return $this->multicastId;
+        return $this->multicastIds;
     }
 
     public function getSuccessCount()
@@ -105,14 +113,13 @@ class Response
         if ($this->getNewRegistrationIdsCount() == 0) {
             return array();
         }
-        $filteredResults = array_filter($this->results,
-            function($result) {
-                return isset($result['registration_id']);
-            });
+        $filteredResults = array_filter($this->results, function($result) {
+                    return isset($result['registration_id']);
+                });
 
         $data = array_map(function($result) {
-                return $result['registration_id'];
-            }, $filteredResults);
+                    return $result['registration_id'];
+                }, $filteredResults);
 
         return $data;
     }
@@ -128,18 +135,15 @@ class Response
         if ($this->getFailureCount() == 0) {
             return array();
         }
-        $filteredResults = array_filter($this->results,
-            function($result) {
-                return (
-                    isset($result['error'])
-                    &&
-                    (
-                    ($result['error'] == "NotRegistered")
-                    ||
-                    ($result['error'] == "InvalidRegistration")
-                    )
-                    );
-            });
+        $filteredResults = array_filter($this->results, function($result) {
+                    return (
+                            isset($result['error']) &&
+                            (
+                            ($result['error'] == "NotRegistered") ||
+                            ($result['error'] == "InvalidRegistration")
+                            )
+                            );
+                });
 
         return array_keys($filteredResults);
     }
@@ -157,14 +161,12 @@ class Response
         if ($this->getFailureCount() == 0) {
             return array();
         }
-        $filteredResults = array_filter($this->results,
-            function($result) {
-                return (
-                    isset($result['error'])
-                    &&
-                    ($result['error'] == "Unavailable")
-                    );
-            });
+        $filteredResults = array_filter($this->results, function($result) {
+                    return (
+                            isset($result['error']) &&
+                            ($result['error'] == "Unavailable")
+                            );
+                });
 
         return array_keys($filteredResults);
     }

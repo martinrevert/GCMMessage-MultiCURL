@@ -63,7 +63,7 @@ class Sender
         }
 
         $rawDataMessages = $this->formMessageData($message);
-        
+
         $ch = array();
         $mh = curl_multi_init();
 
@@ -138,22 +138,7 @@ class Sender
         }
         curl_multi_close($mh);
 
-        //make the final response
-        $responseToSend = array();
-        $canonicalIds = array();
-        foreach ($responses as $response) {
-            $data = \json_decode($response, true);
-            if ($data === null) {
-                throw new Exception("Malformed reponse body. " . $response, Exception::MALFORMED_RESPONSE);
-            }
-            $responseToSend['multicast_id'] = $data['multicast_id'];
-            $responseToSend['failure'] = $data['failure'];
-            $responseToSend['success'] = $data['success'];
-            $canonicalIds = array_merge($canonicalIds, $data['canonical_ids']);
-        }
-        $responseToSend['canonical_ids'] = $canonicalIds;
-
-        return new Response($message, json_encode($responseToSend));
+        return new Response($message, $responses);
     }
 
     /**
