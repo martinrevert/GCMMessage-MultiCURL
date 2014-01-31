@@ -1,14 +1,15 @@
 {
-	"name": "codemonkeys-ru/gcm-message",
+    "name": "mseshachalam/gcm-message",
     "type": "library",
     "description": "Google Cloud Messaging (GCM) PHP Server Library",
     "keywords": ["GCM", "push message", "android"],
 	"authors": [
 		{
-			"name": "Vladimir Savenkov",
-			"email": "ivariable@gmail.com",
+			"name": "Seshachalam Malisetti",
+			"email": "abbiya@gmail.com",
 			"homepage": "http://ivariable.ru",
-			"role": "Developer"
+			"role": "Developer",
+                        "forkedfrom": "Codemonkeys_ru",
 		}
 	],
     "license": "MIT",

@@ -1,10 +1,12 @@
 <?php
+
 namespace CodeMonkeysRu\GCM;
 
 /**
  * Messages sender to GCM servers
  *
  * @author Vladimir Savenkov <ivariable@gmail.com>
+ * @modified Seshachalam Malisetti <abbiya@gmail.com>
  */
 class Sender
 {
@@ -60,59 +62,98 @@ class Sender
             throw new Exception("Server API Key not set", Exception::ILLEGAL_API_KEY);
         }
 
-        //GCM response: Number of messages on bulk (1001) exceeds maximum allowed (1000)
-        if (count($message->getRegistrationIds()) > 1000) {
-            throw new Exception("Malformed request: Registration Ids exceed the GCM imposed limit of 1000", Exception::MALFORMED_REQUEST);
-        }
+        $rawDataMessages = $this->formMessageData($message);
         
-        $rawData = $this->formMessageData($message);
-        if (isset($rawData['data'])) {
-            if (strlen(json_encode($rawData['data'])) > 4096) {
-                throw new Exception("Data payload is to big (max 4096 bytes)", Exception::MALFORMED_REQUEST);
+        $ch = array();
+        $mh = curl_multi_init();
+
+        $i = 0;
+        foreach ($rawDataMessages as $rawData) {
+            if (isset($rawData['data'])) {
+                if (strlen(json_encode($rawData['data'])) > 4096) {
+                    throw new Exception("Data payload is to big (max 4096 bytes)", Exception::MALFORMED_REQUEST);
+                }
+            }
+
+            $data = json_encode($rawData);
+            $headers = array(
+                'Authorization: key=' . $this->serverApiKey,
+                'Content-Type: application/json'
+            );
+
+            $ch[$i] = curl_init();
+
+            curl_setopt($ch, CURLOPT_URL, $this->gcmUrl);
+
+            curl_setopt($ch, CURLOPT_POST, true);
+            curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+
+            curl_setopt($ch, CURLOPT_POSTFIELDS, $data);
+            curl_multi_add_handle($mh, $ch[$i]);
+            $i++;
+        }
+
+        $active = null;
+        //execute the handles
+        do {
+            $mrc = curl_multi_exec($mh, $active);
+        } while ($mrc == CURLM_CALL_MULTI_PERFORM);
+
+        while ($active && $mrc == CURLM_OK) {
+            if (curl_multi_select($mh) != -1) {
+                do {
+                    $mrc = curl_multi_exec($mh, $active);
+                } while ($mrc == CURLM_CALL_MULTI_PERFORM);
             }
         }
-        $data = json_encode($rawData);
 
-        $headers = array(
-            'Authorization: key='.$this->serverApiKey,
-            'Content-Type: application/json'
-        );
+        $responses = array();
 
-        $ch = curl_init();
+        foreach ($ch as $handler) {
+            $resultBody = curl_multi_getcontent($handler);
+            array_push($responses, $resultBody);
+            $resultHttpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
 
-        curl_setopt($ch, CURLOPT_URL, $this->gcmUrl);
+            switch ($resultHttpCode) {
+                case "200":
+                    //All fine. Continue response processing.
+                    break;
 
-        curl_setopt($ch, CURLOPT_POST, true);
-        curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+                case "400":
+                    throw new Exception('Malformed request. ' . $resultBody, Exception::MALFORMED_REQUEST);
+                    break;
 
-        curl_setopt($ch, CURLOPT_POSTFIELDS, $data);
+                case "401":
+                    throw new Exception('Authentication Error. ' . $resultBody, Exception::AUTHENTICATION_ERROR);
+                    break;
 
-        $resultBody = curl_exec($ch);
-        $resultHttpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-
-        curl_close($ch);
-
-        switch ($resultHttpCode) {
-            case "200":
-                //All fine. Continue response processing.
-                break;
-
-            case "400":
-                throw new Exception('Malformed request. '.$resultBody, Exception::MALFORMED_REQUEST);
-                break;
-
-            case "401":
-                throw new Exception('Authentication Error. '.$resultBody, Exception::AUTHENTICATION_ERROR);
-                break;
-
-            default:
-                //TODO: Retry-after
-                throw new Exception("Unknown error. ".$resultBody, Exception::UNKNOWN_ERROR);
-                break;
+                default:
+                    //TODO: Retry-after
+                    throw new Exception("Unknown error. " . $resultBody, Exception::UNKNOWN_ERROR);
+                    break;
+            }
+            //close the handles
+            curl_multi_remove_handle($mh, $handler);
         }
+        curl_multi_close($mh);
 
-        return new Response($message, $resultBody);
+        //make the final response
+        $responseToSend = array();
+        $canonicalIds = array();
+        foreach ($responses as $response) {
+            $data = \json_decode($response, true);
+            if ($data === null) {
+                throw new Exception("Malformed reponse body. " . $response, Exception::MALFORMED_RESPONSE);
+            }
+            $responseToSend['multicast_id'] = $data['multicast_id'];
+            $responseToSend['failure'] = $data['failure'];
+            $responseToSend['success'] = $data['success'];
+            $canonicalIds = array_merge($canonicalIds, $data['canonical_ids']);
+        }
+        $responseToSend['canonical_ids'] = $canonicalIds;
+
+        return new Response($message, json_encode($responseToSend));
     }
 
     /**
@@ -123,9 +164,9 @@ class Sender
      */
     private function formMessageData(Message $message)
     {
-        $data = array(
-            'registration_ids' => $message->getRegistrationIds(),
-        );
+        $messages = array();
+
+        $regIdChunks = array_chunk($message->getRegistrationIds(), 1000);
 
         $dataFields = array(
             'registration_ids' => 'getRegistrationIds',
@@ -137,13 +178,20 @@ class Sender
             'dry_run' => 'getDryRun',
         );
 
-        foreach ($dataFields as $fieldName => $getter) {
-            if ($message->$getter() != null) {
-                $data[$fieldName] = $message->$getter();
+        foreach ($regIdChunks as $chunk) {
+            $data = array(
+                'registration_ids' => $chunk,
+            );
+
+            foreach ($dataFields as $fieldName => $getter) {
+                if ($message->$getter() != null) {
+                    $data[$fieldName] = $message->$getter();
+                }
             }
+            array_push($messages, $data);
         }
 
-        return $data;
+        return $messages;
     }
 
 }
