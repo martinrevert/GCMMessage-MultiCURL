@@ -116,8 +116,8 @@ try {
 
 ChangeLog
 
-Added multi curl functionality to the Sender class
-Message object can now have more than 1000 registration ids
+Added multi curl functionality to the Sender class.
+Message object can now have more than 1000 registration ids.
 No change in response required
 ----------------------
 
