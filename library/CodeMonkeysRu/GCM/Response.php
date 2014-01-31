@@ -9,11 +9,11 @@ class Response
 {
 
     /**
-     * Unique ID (number) identifying the multicast message.
+     * array of Unique IDs (number) identifying the multicast messages.
      *
-     * @var integer
+     * @var array
      */
-    private $multicastIds = null;
+    private $multicastIds = array();
 
     /**
      * Number of messages that were processed without an error.
