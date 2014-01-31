@@ -83,13 +83,13 @@ class Sender
 
             $ch[$i] = curl_init();
 
-            curl_setopt($ch, CURLOPT_URL, $this->gcmUrl);
+            curl_setopt($ch[$i], CURLOPT_URL, $this->gcmUrl);
 
-            curl_setopt($ch, CURLOPT_POST, true);
-            curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
-            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch[$i], CURLOPT_POST, true);
+            curl_setopt($ch[$i], CURLOPT_HTTPHEADER, $headers);
+            curl_setopt($ch[$i], CURLOPT_RETURNTRANSFER, true);
 
-            curl_setopt($ch, CURLOPT_POSTFIELDS, $data);
+            curl_setopt($ch[$i], CURLOPT_POSTFIELDS, $data);
             curl_multi_add_handle($mh, $ch[$i]);
             $i++;
         }
@@ -113,7 +113,7 @@ class Sender
         foreach ($ch as $handler) {
             $resultBody = curl_multi_getcontent($handler);
             array_push($responses, $resultBody);
-            $resultHttpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            $resultHttpCode = curl_getinfo($handler, CURLINFO_HTTP_CODE);
 
             switch ($resultHttpCode) {
                 case "200":
